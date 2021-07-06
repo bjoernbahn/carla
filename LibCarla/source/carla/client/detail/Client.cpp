@@ -279,6 +279,26 @@ namespace detail {
     }
   }
 
+  geom::BoundingBox Client::GetActorBoundingBox(rpc::ActorId actor) const
+  {
+	return _pimpl->CallAndWait<geom::BoundingBox>("get_actor_bounding_box", actor);
+  }
+
+  std::vector<rpc::EnvironmentObject> Client::GetEnvironmentObjects() const
+  {
+	return _pimpl->CallAndWait<std::vector<rpc::EnvironmentObject>>("get_stationary_map_objects");
+  }
+
+  rpc::AxlePositions Client::GetAxlePositions(rpc::ActorId actor) const
+  {
+    return _pimpl->CallAndWait<rpc::AxlePositions>("get_axle_positions", actor);
+  }
+
+  std::vector<rpc::TrafficLightHeads> Client::GetTrafficLightHeads(rpc::ActorId actor) const
+  {
+	  return _pimpl->CallAndWait<std::vector<rpc::TrafficLightHeads>>("get_traffic_light_heads", actor);
+  }
+
   void Client::SetActorLocation(rpc::ActorId actor, const geom::Location &location) {
     _pimpl->AsyncCall("set_actor_location", actor, location);
   }

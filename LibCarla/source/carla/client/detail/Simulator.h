@@ -21,6 +21,7 @@
 #include "carla/client/detail/EpisodeProxy.h"
 #include "carla/client/detail/WalkerNavigation.h"
 #include "carla/profiler/LifetimeProfiled.h"
+#include "carla/rpc/AxlePositions.h"
 #include "carla/rpc/TrafficLightState.h"
 #include "carla/rpc/VehicleLightStateList.h"
 #include "carla/rpc/LabelledPoint.h"
@@ -417,11 +418,27 @@ namespace detail {
       _client.SetActorEnableGravity(actor.GetId(), enabled);
     }
 
+    geom::BoundingBox GetActorBoundingBox(ActorId actor) const {
+      return _client.GetActorBoundingBox(actor);
+    }
+
+    std::vector<rpc::EnvironmentObject> GetEnvironmentObjects() const {
+      return _client.GetEnvironmentObjects();
+    }
+	
+    std::vector<rpc::TrafficLightHeads> GetTrafficLightHeads(const TrafficLight &actor) const {
+      return _client.GetTrafficLightHeads(actor.GetId());
+    }
+
     /// @}
     // =========================================================================
     /// @name Operations with vehicles
     // =========================================================================
     /// @{
+
+    rpc::AxlePositions GetAxlePositions(ActorId id) const {
+      return _client.GetAxlePositions(id);
+    }
 
     void SetVehicleAutopilot(Vehicle &vehicle, bool enabled = true) {
       _client.SetActorAutopilot(vehicle.GetId(), enabled);

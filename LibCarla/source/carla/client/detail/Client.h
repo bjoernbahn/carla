@@ -9,6 +9,7 @@
 #include "carla/Memory.h"
 #include "carla/NonCopyable.h"
 #include "carla/Time.h"
+#include "carla/geom/BoundingBox.h"
 #include "carla/geom/Transform.h"
 #include "carla/geom/Location.h"
 #include "carla/rpc/Actor.h"
@@ -29,6 +30,8 @@
 #include "carla/rpc/WeatherParameters.h"
 #include "carla/rpc/OpendriveGenerationParameters.h"
 #include "carla/rpc/VehicleLightStateList.h"
+#include "carla/rpc/AxlePositions.h"
+#include "carla/rpc/TrafficLightHead.h"
 #include "carla/rpc/VehicleWheels.h"
 
 #include <functional>
@@ -146,6 +149,14 @@ namespace detail {
         rpc::AttachmentType attachment_type);
 
     bool DestroyActor(rpc::ActorId actor);
+
+    geom::BoundingBox GetActorBoundingBox(rpc::ActorId actor) const;
+
+    std::vector<rpc::EnvironmentObject> GetEnvironmentObjects() const;
+
+    rpc::AxlePositions GetAxlePositions(rpc::ActorId actor) const;
+
+    std::vector<rpc::TrafficLightHeads> GetTrafficLightHeads(rpc::ActorId actor) const;
 
     void SetActorLocation(
         rpc::ActorId actor,
