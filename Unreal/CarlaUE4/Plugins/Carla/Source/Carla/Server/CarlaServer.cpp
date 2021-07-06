@@ -15,6 +15,14 @@
 #include "Carla/Util/RayTracer.h"
 #include "Carla/Vehicle/CarlaWheeledVehicle.h"
 #include "Carla/Walker/WalkerController.h"
+#include "Carla/Util/BoundingBox.h"
+#include "Carla/Util/BoundingBoxCalculator.h"
+#include "Carla/Game/Tagger.h"
+#include "Containers/Array.h"
+#include "GameFramework/Actor.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Templates/Casts.h"
+#include "EngineUtils.h"
 #include "Carla/Walker/WalkerBase.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Carla/Game/Tagger.h"
@@ -28,9 +36,11 @@
 #include <compiler/disable-ue4-macros.h>
 #include <carla/Functional.h>
 #include <carla/Version.h>
+#include <carla/StringUtil.h>
 #include <carla/rpc/Actor.h>
 #include <carla/rpc/ActorDefinition.h>
 #include <carla/rpc/ActorDescription.h>
+#include <carla/rpc/AxlePositions.h>
 #include <carla/rpc/Command.h>
 #include <carla/rpc/CommandResponse.h>
 #include <carla/rpc/DebugShape.h>
@@ -45,6 +55,7 @@
 #include <carla/rpc/Server.h>
 #include <carla/rpc/String.h>
 #include <carla/rpc/Transform.h>
+#include <carla/rpc/TrafficLightHead.h>
 #include <carla/rpc/Vector2D.h>
 #include <carla/rpc/Vector3D.h>
 #include <carla/rpc/VehicleControl.h>
@@ -583,6 +594,151 @@ void FCarlaServer::FPimpl::BindActions()
       RESPOND_ERROR("internal error: unable to destroy actor");
     }
     return true;
+  };
+
+  // ~~ OSI Additions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  //OSI
+  BIND_SYNC(get_actor_bounding_box) << [this](cr::ActorId ActorId) -> R<cg::BoundingBox>
+  {
+    REQUIRE_CARLA_EPISODE();
+    auto ActorView = Episode->FindActor(ActorId);
+    if (!ActorView.IsValid())
+    {
+      RESPOND_ERROR("unable to get actor bounding box: actor not found");
+    }
+    AActor* Actor = ActorView.GetActor();
+    TArray<AActor*> ActorList = { Actor };
+    auto BBoxList = UBoundingBoxCalculator::GetBoundingBoxOfActors(ActorList);
+    if (!BBoxList.Num()) {
+		//return cg::BoundingBox({-1,-1,-1});
+		//RESPOND_ERROR("unable to get actor bounding box: empty result list");
+		// Use GetActorBoundingBox as a fallback that always uses the actor bounding box calculation instead of
+		// the specialization-dependant logic of GetBoundingBoxOfActors
+		return UBoundingBoxCalculator::GetActorBoundingBox(Actor);
+	}
+	return BBoxList[0];
+  };
+
+  //OSI
+  BIND_SYNC(get_stationary_map_objects) << [this]()->R<std::vector<cr::EnvironmentObject>>
+  {
+    REQUIRE_CARLA_EPISODE();
+    std::vector<cr::EnvironmentObject> Result;
+
+    UWorld* world = Episode->GetWorld();
+    TArray<UMeshComponent*> Components;
+    //Container introduced for instanced meshes
+    std::vector<FTransform> transforms;
+    for (TActorIterator<AActor> Iterator(world); Iterator; ++Iterator) {
+      AActor* Actor = *Iterator;
+      auto ActorView = Episode->FindOrFakeActor(Actor);
+
+      //Skip Actors with an id, because they usually don't represent map parts and can be retrieved by GetActors()
+      if (0 == ActorView.GetActorId()) {
+        Actor->GetComponents<UMeshComponent>(Components);
+        auto ActorName = std::string(TCHAR_TO_UTF8(*Actor->GetFName().ToString()));
+
+        for (auto Component : Components) {
+          //Skip everything that has no mesh component
+          //TODO should other component types be included here?
+          if (nullptr == Cast<UStaticMeshComponent>(Component) && nullptr == Cast<USkeletalMeshComponent>(Component))
+            continue;
+          auto ComponentName = std::string(TCHAR_TO_UTF8(*Component->GetFName().ToString()));
+
+          //Bounding box in object space
+          auto BoundingBoxSphere = Component->CalcLocalBounds();
+          FBoundingBox BoundingBox{ BoundingBoxSphere.Origin,
+            BoundingBoxSphere.BoxExtent.IsZero() ? FVector(BoundingBoxSphere.SphereRadius) : BoundingBoxSphere.BoxExtent };
+
+          //Semantic Tags
+          auto Tag = ATagger::GetTagOfTaggedComponent(*Component);
+          //UE_LOG(LogTemp, Warning, TEXT("Component Tag %d"), Tag);
+
+          // Include all transforms for instanced meshes
+          auto InstancedComponent = Cast<UInstancedStaticMeshComponent>(Component);
+          if (nullptr == InstancedComponent) {
+            auto transform = Component->GetComponentTransform();
+            transforms.push_back(transform);
+          }
+          else for (size_t i = 0; i < InstancedComponent->GetInstanceCount(); i++) {
+            FTransform transform;
+            InstancedComponent->GetInstanceTransform(i, transform, true);
+            transforms.push_back(transform);
+            //TODO instance name is always identical
+          }
+
+          for (auto transform : transforms) {
+            //only available as of c++11. Using Result.back() instead
+            //auto EnvironmentObject = Result.emplace_back();
+            Result.emplace_back();
+            // actor has no unique id, generate id per response
+            Result.back().id = Result.size();
+            // Scale is lost because carla::geom::transform defines only rotation and position
+            Result.back().transform = transform;
+            // Apply Scale3D to BoundingBox.extent to correctly transfer it
+            FBoundingBox ScaledBoundingBox{ BoundingBox.Origin, BoundingBox.Extent * transform.GetScale3D() };
+            Result.back().bounding_box = ScaledBoundingBox;
+            // try to add CARLA's semantic tags to the EnvironmentObject
+            Result.back().type = Tag;
+
+            // ActorName is a unique identifier for this actor in Unreal, ComponentName is unique within Actor
+            Result.back().name = ActorName + ':' + ComponentName;
+          }
+
+          transforms.clear();
+        }
+      }
+
+      Components.Reset();
+    }
+
+    return Result;
+  };
+
+  //OSI
+  BIND_SYNC(get_traffic_light_heads) << [this](cr::ActorId ActorId)->R<std::vector<cr::TrafficLightHeads>>
+  {
+    REQUIRE_CARLA_EPISODE();
+    auto ActorView = Episode->FindActor(ActorId);
+    if (!ActorView.IsValid())
+    {
+      RESPOND_ERROR("unable to get traffic light heads: actor not found")
+    }
+    auto TrafficLight = Cast<ATrafficLightBase>(ActorView.GetActor());
+    if (!TrafficLight)
+    {
+      RESPOND_ERROR("unable to get traffic light heads: not a traffic light actor");
+    }
+	auto Heads = TrafficLight->GetTrafficLightHeads();
+    std::vector<cr::TrafficLightHeads> TrafficLightHeads;
+	for (const auto& head : Heads) {
+	  TrafficLightHeads.push_back(head.ToRpcType(TrafficLight->GetTransform()));
+	}
+    return TrafficLightHeads;
+  };
+
+  //OSI //DEBUG
+  BIND_SYNC(get_axle_positions) << [this](cr::ActorId ActorId)->R<cr::AxlePositions>
+  {
+    REQUIRE_CARLA_EPISODE();
+    auto ActorView = Episode->FindActor(ActorId);
+    if (!ActorView.IsValid()) {
+      RESPOND_ERROR("unable to get axle positions: actor not found")
+    }
+    auto Vehicle = Cast<ACarlaWheeledVehicle>(ActorView.GetActor());
+    if (!Vehicle) {
+      RESPOND_ERROR("unable to get axle positions: not a vehicle actor");
+    }
+    auto positions = Vehicle->GetVehicleAxlePositions();
+    // Bounding box might have a different origin than the mesh - apply transform;
+    auto boundingBoxTransform = Vehicle->GetVehicleBoundingBoxTransform();
+    auto front = boundingBoxTransform.TransformPositionNoScale(positions[0]);
+    auto rear = boundingBoxTransform.TransformPositionNoScale(positions[1]);
+    cr::AxlePositions result;
+    result.front = carla::geom::Vector3D(front.X, front.Y, front.Z).ToMeters();
+    result.rear = carla::geom::Vector3D(rear.X, rear.Y, rear.Z).ToMeters();
+    return result;
   };
 
   // ~~ Actor physics ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
