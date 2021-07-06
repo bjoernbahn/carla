@@ -7,6 +7,7 @@
 #pragma once
 
 #include "Carla/Vehicle/CarlaWheeledVehicle.h"
+#include "Carla/Vehicle/OSIVehicleType.h"
 
 #include "VehicleParameters.generated.h"
 
@@ -38,4 +39,19 @@ struct CARLA_API FVehicleParameters
   /// empty if no driver is supported.
   UPROPERTY(EditAnywhere, BlueprintReadWrite)
   TArray<int32> SupportedDrivers;
+
+
+  /// OSI vehicle classification
+  UPROPERTY(Category = "CARLA Wheeled Vehicle", VisibleAnywhere)
+  // Will be guessed based on bounding box size of default instance of 
+  // member Class, if set to EOSIVehicleType::TYPE_UNKNOWN
+  EOSIVehicleType OSIVehicleType = EOSIVehicleType::TYPE_UNKNOWN;
+
+  /// Static minimal distance in m of under-body plane to ground surface plane 
+  /// (i.e. disregarding driving dynamic effects or road surface effects) under
+  /// neutral load conditions
+  UPROPERTY(Category = "CARLA Wheeled Vehicle", VisibleAnywhere)
+  //Will be guessed based on OSIVehicleType, if below 0
+  float OSIGroundClearance = -1;
+
 };

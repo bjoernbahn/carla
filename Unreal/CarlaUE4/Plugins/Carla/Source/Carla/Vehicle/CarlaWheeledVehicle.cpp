@@ -167,6 +167,45 @@ FVector ACarlaWheeledVehicle::GetVehicleBoundingBoxExtent() const
   return VehicleBounds->GetScaledBoxExtent();
 }
 
+TArray<FVector> ACarlaWheeledVehicle::GetVehicleAxlePositions() const
+{
+  //Wheel positions per axle -  the axle is inbetween
+  TArray<FVector> frontWheels;
+  TArray<FVector> rearWheels;
+  auto VehicleMovement = this->GetVehicleMovement();
+  const auto Mesh = this->GetMesh();
+  for (auto& Wheel : VehicleMovement->WheelSetups)
+  {
+	//TODO Carla expects the Vehicle_Base bone at origin (0,0,0) - does this mean BonePosition is already local?
+	const FVector BonePosition = Mesh->SkeletalMesh->GetComposedRefPoseMatrix(Wheel.BoneName).GetOrigin() * Mesh->GetComponentScale();
+	// For expected wheel bone names see https://carla.readthedocs.io/en/0.9.10/tuto_A_vehicle_modelling/#rigging
+	FString boneName = Wheel.BoneName.ToString();
+	if (boneName.Contains("front") || boneName.Contains("_F_"))
+	{ //front wheel; According to documentation, bone should be named Wheel_Front_{Left,Right}
+		frontWheels.Emplace(BonePosition);
+	}
+	else
+	{ //Should be a rear wheel; According to documentation, bone should be named Wheel_Rear_Left
+		rearWheels.Emplace(BonePosition);
+	}
+  }
+
+  FVector frontAxle = FVector::ZeroVector;
+  for (auto& wheel : frontWheels)
+  {
+	  frontAxle += wheel;
+  }
+  frontAxle /= FMath::Max(frontWheels.Num(), 1);
+  FVector rearAxle = FVector::ZeroVector;
+  for (auto& wheel : rearWheels)
+  {
+	  rearAxle += wheel;
+  }
+  rearAxle /= FMath::Max(rearWheels.Num(), 1);
+
+  return {frontAxle, rearAxle};
+}
+
 float ACarlaWheeledVehicle::GetMaximumSteerAngle() const
 {
   const auto &Wheels = GetVehicleMovementComponent()->Wheels;

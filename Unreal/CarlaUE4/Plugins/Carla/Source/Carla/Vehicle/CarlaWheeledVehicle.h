@@ -107,6 +107,9 @@ public:
     return VehicleBounds;
   }
 
+  UFUNCTION(Category = "CARLA Wheeled Vehicle", BlueprintCallable)
+  TArray<FVector> GetVehicleAxlePositions() const;
+  
   /// Get the maximum angle at which the front wheel can steer.
   UFUNCTION(Category = "CARLA Wheeled Vehicle", BlueprintCallable)
   float GetMaximumSteerAngle() const;
@@ -244,6 +247,7 @@ protected:
   UFUNCTION(BlueprintImplementableEvent)
   void RefreshLightState(const FVehicleLightState &VehicleLightState);
 
+public:
   UFUNCTION(BlueprintCallable, CallInEditor)
   void AdjustVehicleBounds();
 

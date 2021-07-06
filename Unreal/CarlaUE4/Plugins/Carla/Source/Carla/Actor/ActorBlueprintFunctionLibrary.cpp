@@ -12,6 +12,10 @@
 #include "Carla/Sensor/ShaderBasedSensor.h"
 #include "Carla/Util/ScopedStack.h"
 
+#include "Carla/Vehicle/CarlaWheeledVehicle.h"
+#include "UObject/UnrealType.h"
+#include "Templates/Casts.h"
+
 #include <algorithm>
 #include <limits>
 #include <stack>
@@ -261,6 +265,138 @@ static void AddVariationsForTrigger(FActorDefinition &Def)
 
     Def.Variations.Emplace(ExtentCoordinate);
   }
+}
+
+static float GuessGroundClearance(EOSIVehicleType type) {
+  switch (type) {
+  default:
+    return -1;//no guess
+  case EOSIVehicleType::TYPE_SMALL_CAR:
+  case EOSIVehicleType::TYPE_COMPACT_CAR:
+  case EOSIVehicleType::TYPE_MEDIUM_CAR:
+  case EOSIVehicleType::TYPE_LUXURY_CAR:
+    return 15;
+  case EOSIVehicleType::TYPE_BUS:
+  case EOSIVehicleType::TYPE_DELIVERY_VAN:
+    return 20;
+  case EOSIVehicleType::TYPE_HEAVY_TRUCK:
+  case EOSIVehicleType::TYPE_SEMITRAILER:
+  case EOSIVehicleType::TYPE_TRAILER:
+    return 30;
+  case EOSIVehicleType::TYPE_MOTORBIKE:
+    return 20;
+  case EOSIVehicleType::TYPE_BICYCLE:
+    return 20;
+  }
+}
+
+static EOSIVehicleType GuessOSIClassification(const ACarlaWheeledVehicle* WheeledVehicle, const FVehicleParameters& Parameters) {
+
+  if (2 == Parameters.NumberOfWheels) {
+    // find location of variable 'is bike' (see point 7 at https://carla.readthedocs.io/en/0.9.10/tuto_A_add_vehicle/#add-a-2-wheeled-vehicle) and return EOSIVehicleType::TYPE_BICYCLE if set
+    //TODO will break if blueprint property is renamed
+    auto Property = WheeledVehicle->GetClass()->FindPropertyByName(FName("IsBike"));
+    auto BoolProperty = Cast<UBoolProperty>(Property);
+    if (BoolProperty && BoolProperty->GetPropertyValue(BoolProperty->ContainerPtrToValuePtr<size_t>(WheeledVehicle))) {
+      return EOSIVehicleType::TYPE_BICYCLE;
+    }
+    return EOSIVehicleType::TYPE_MOTORBIKE;
+  }
+  // guess vehicle type based on bounding box size - in m
+  auto bbox = WheeledVehicle->GetVehicleBoundingBoxExtent() * 1e-2;
+  if (1.5f < bbox.Z) { //height over 3m
+    return EOSIVehicleType::TYPE_HEAVY_TRUCK;
+  }
+  else if (1.2f < bbox.Z) {//height over 2.4m
+    return EOSIVehicleType::TYPE_DELIVERY_VAN;
+  }
+  else if (0.5f > bbox.Y) {//width of less than 1m
+    return EOSIVehicleType::TYPE_WHEELCHAIR;
+  }
+  else if (2.5f < bbox.X) {//length over 5m
+    return EOSIVehicleType::TYPE_LUXURY_CAR;
+  }
+  else if (2.25f < bbox.X) {//length over 4.5m
+    return EOSIVehicleType::TYPE_MEDIUM_CAR;
+  }
+  else if (2.f < bbox.X) {//length over 4m
+    return EOSIVehicleType::TYPE_COMPACT_CAR;
+  }
+  else if (0.f < bbox.X) {
+    return EOSIVehicleType::TYPE_SMALL_CAR;
+  }
+  // TYPE_UNKNOWN is not allowed as part of ground truth, but TYPE_OTHER is
+  return EOSIVehicleType::TYPE_OTHER;
+}
+
+static FVector AddOSIBBCenterToXOffset(FActorDefinition& Definition, ACarlaWheeledVehicle* WheeledVehicle, FVector& axle, bool front){
+  // Bounding box might have a different origin than the mesh - apply transform;
+  auto boundingBoxTransform = WheeledVehicle->GetVehicleBoundingBoxTransform();
+  axle = boundingBoxTransform.TransformPositionNoScale(axle);
+  //convert cm->m
+  axle *= 1e-2;
+  FString name = front ? TEXT("bbcenter_to_front_") : TEXT("bbcenter_to_rear_");
+  Definition.Attributes.Emplace(FActorAttribute{
+    name + "x",
+    EActorAttributeType::Float,
+    FString::SanitizeFloat(axle.X) });
+  Definition.Attributes.Emplace(FActorAttribute{
+    name + "y",
+    EActorAttributeType::Float,
+    FString::SanitizeFloat(axle.Y) });
+  Definition.Attributes.Emplace(FActorAttribute{
+    name + "z",
+    EActorAttributeType::Float,
+    FString::SanitizeFloat(axle.Z) });
+  return axle;
+}
+
+static void AddOSIVehicleAttributes(FActorDefinition& Definition, const FVehicleParameters& Parameters) {
+  ACarlaWheeledVehicle* WheeledVehicle = Cast<ACarlaWheeledVehicle>(Definition.Class.GetDefaultObject());
+  WheeledVehicle->AdjustVehicleBounds();
+  std::vector<float> wheelRadii;
+  // Estimates axle center by averaging the wheel positions
+  auto Axles = WheeledVehicle->GetVehicleAxlePositions();
+  auto VehicleMovement = WheeledVehicle->GetVehicleMovement();
+  for (auto& Wheel : VehicleMovement->WheelSetups) {
+    if (Wheel.WheelClass) {
+      UVehicleWheel* WheelObj = Cast<UVehicleWheel>(Wheel.WheelClass->GetDefaultObject());
+      wheelRadii.push_back(WheelObj->ShapeRadius);
+    }
+  }
+  std::sort(wheelRadii.begin(), wheelRadii.end());
+  float WheelRadiusMedian = wheelRadii.size() ? wheelRadii[wheelRadii.size() / 2] : 0;
+  Definition.Attributes.Emplace(FActorAttribute{
+    TEXT("wheel_radius"),
+    EActorAttributeType::Float,
+    // also convert cm->m
+    FString::SanitizeFloat(WheelRadiusMedian * 1e-2) });
+
+  // Add each axle position as three float value entries
+  auto front = AddOSIBBCenterToXOffset(Definition, WheeledVehicle, Axles[0], true);
+  auto rear = AddOSIBBCenterToXOffset(Definition, WheeledVehicle, Axles[1], false);
+
+  auto classification = Parameters.OSIVehicleType;
+  const UEnum* EnumPtr = FindObject<UEnum>(ANY_PACKAGE, TEXT("EOSIVehicleType"), true);
+  if (EOSIVehicleType::TYPE_UNKNOWN == classification) {
+    // Cannot use unknown as classification - try guessing based on bbox size and number of wheels
+    classification = GuessOSIClassification(WheeledVehicle, Parameters);
+    auto EnumValueName = EnumPtr->GetNameByValue((int64)classification).ToString();
+    UE_LOG(LogTemp, Warning, TEXT("OSI vehicle classification of %s was unknown. Guessed %s"),
+      *WheeledVehicle->GetFName().ToString(), *EnumValueName);
+  }
+  Definition.Attributes.Emplace(FActorAttribute{
+    TEXT("osi_vehicle_type"),
+    EActorAttributeType::String,
+    EnumPtr->GetNameByValue((int64)classification).ToString() });
+  float groundClearance = Parameters.OSIGroundClearance;
+  if (groundClearance < 0) {
+	groundClearance = GuessGroundClearance(classification);
+  }
+  Definition.Attributes.Emplace(FActorAttribute{
+    TEXT("ground_clearance"),
+    EActorAttributeType::Float,
+    FString::SanitizeFloat(groundClearance * 1e-2) });
 }
 
 FActorDefinition UActorBlueprintFunctionLibrary::MakeGenericDefinition(
@@ -1043,6 +1179,10 @@ void UActorBlueprintFunctionLibrary::MakeVehicleDefinition(
     TEXT("number_of_wheels"),
     EActorAttributeType::Int,
     FString::FromInt(Parameters.NumberOfWheels)});
+  Success = CheckActorDefinition(Definition);
+
+  AddOSIVehicleAttributes(Definition, Parameters);
+
   Success = CheckActorDefinition(Definition);
 }
 
