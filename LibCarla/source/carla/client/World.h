@@ -26,6 +26,8 @@
 #include "carla/rpc/VehiclePhysicsControl.h"
 #include "carla/rpc/WeatherParameters.h"
 #include "carla/rpc/VehicleLightStateList.h"
+#include "carla/rpc/AxlePositions.h"
+#include "carla/rpc/TrafficLightHead.h"
 
 #include <boost/optional.hpp>
 
@@ -93,6 +95,18 @@ namespace client {
 
     /// Return a snapshot of the world at this moment.
     WorldSnapshot GetSnapshot() const;
+
+    /// Get bounding box for actor, independend of actor type (default bounding box for traffic.* defines the influenced area instead of the models bounding box)
+    geom::BoundingBox GetActorBoundingBox(ActorId id) const;
+
+	/// Get traffic light heads for given traffic light
+    std::vector<rpc::TrafficLightHeads> GetTrafficLightHeads(SharedPtr<const TrafficLight> trafficLight) const;
+
+    /// Get bounding boxes (and other stuff) for stationary map objects that are _not_ mapped as carla actors
+    std::vector<rpc::EnvironmentObject> GetEnvironmentObjects() const;
+
+    /// Get current bounding box center to front and rear axle offsets
+    rpc::AxlePositions GetAxlePositions(ActorId id) const;
 
     /// Find actor by id, return nullptr if not found.
     SharedPtr<Actor> GetActor(ActorId id) const;

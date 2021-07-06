@@ -103,6 +103,30 @@ namespace client {
         nullptr;
   }
 
+  carla::geom::BoundingBox World::GetActorBoundingBox(ActorId id) const
+  {
+    auto simulator = _episode.Lock();
+    return simulator->GetActorBoundingBox(id);
+  }
+
+  std::vector<rpc::TrafficLightHeads> World::GetTrafficLightHeads(SharedPtr<const TrafficLight> trafficLight) const
+  {
+    auto simulator = _episode.Lock();
+	return simulator->GetTrafficLightHeads(*trafficLight);
+  }
+
+  std::vector<rpc::EnvironmentObject> World::GetEnvironmentObjects() const
+  {
+    auto simulator = _episode.Lock();
+    return simulator->GetEnvironmentObjects();
+  }
+
+  rpc::AxlePositions World::GetAxlePositions(ActorId id) const
+  {
+    auto simulator = _episode.Lock();
+    return simulator->GetAxlePositions(id);
+  }
+
   SharedPtr<ActorList> World::GetActors() const {
     return SharedPtr<ActorList>{new ActorList{
                                   _episode,

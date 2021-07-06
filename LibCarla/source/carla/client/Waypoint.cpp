@@ -88,7 +88,11 @@ namespace client {
     }
     remaining_length -= std::numeric_limits<double>::epsilon();
     if(result.size()) {
-      result.emplace_back(result.back()->GetNext(remaining_length).front());
+	  next = result.back()->GetNext(remaining_length);
+	  // next might be empty when there is no successor road
+	  if (next.size()) {
+		  result.emplace_back(next.front());
+	  }
     } else {
       result.emplace_back(GetNext(remaining_length).front());
     }
@@ -119,7 +123,11 @@ namespace client {
     }
     remaining_length -= std::numeric_limits<double>::epsilon();
     if(result.size()) {
-      result.emplace_back(result.back()->GetPrevious(remaining_length).front());
+	  prev = result.back()->GetPrevious(remaining_length);
+	  // prev might be empty if there is no predecessor road
+	  if (prev.size()) {
+		  result.emplace_back(prev.front());
+	  }
     } else {
       result.emplace_back(GetPrevious(remaining_length).front());
     }

@@ -100,6 +100,11 @@ namespace client {
     std::vector<SharedPtr<Landmark>> GetLandmarksOfTypeInDistance(
         double distance, std::string filter_type, bool stop_at_junction = false) const;
 
+    /// Returns the underlying carla::road::element::Waypoint for use with carla::road::Map
+    road::element::Waypoint GetWaypoint() const {
+        return _waypoint;
+    }
+
   private:
 
     friend class Map;
