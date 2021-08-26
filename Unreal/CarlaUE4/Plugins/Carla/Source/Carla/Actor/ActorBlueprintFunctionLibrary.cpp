@@ -1181,9 +1181,13 @@ void UActorBlueprintFunctionLibrary::MakeVehicleDefinition(
     FString::FromInt(Parameters.NumberOfWheels)});
   Success = CheckActorDefinition(Definition);
 
-  AddOSIVehicleAttributes(Definition, Parameters);
-
+  Definition.Attributes.Emplace(FActorAttribute{
+    TEXT("generation"),
+    EActorAttributeType::Int,
+    FString::FromInt(Parameters.Generation)});
   Success = CheckActorDefinition(Definition);
+
+  AddOSIVehicleAttributes(Definition, Parameters);
 }
 
 template <typename T, typename Functor>
@@ -1244,6 +1248,11 @@ void UActorBlueprintFunctionLibrary::MakePedestrianDefinition(
     TEXT("gender"),
     EActorAttributeType::String,
     GetGender(Parameters.Gender)});
+
+  Definition.Attributes.Emplace(FActorAttribute{
+    TEXT("generation"),
+    EActorAttributeType::Int,
+    FString::FromInt(Parameters.Generation)});
 
   Definition.Attributes.Emplace(FActorAttribute{
     TEXT("age"),
