@@ -752,6 +752,29 @@ void FCarlaServer::FPimpl::BindActions()
     return Result;
   };
 
+  //OSI //DEBUG
+  BIND_SYNC(get_axle_positions) << [this](cr::ActorId ActorId)->R<cr::AxlePositions>
+  {
+    REQUIRE_CARLA_EPISODE();
+    FCarlaActor* ActorView = Episode->FindCarlaActor(ActorId);
+    if (ActorView->IsInValid()) {
+      RESPOND_ERROR("unable to get axle positions: actor not found")
+    }
+    auto Vehicle = Cast<ACarlaWheeledVehicle>(ActorView->GetActor());
+    if (!Vehicle) {
+      RESPOND_ERROR("unable to get axle positions: not a vehicle actor");
+    }
+    auto positions = Vehicle->GetVehicleAxlePositions();
+    // Bounding box might have a different origin than the mesh - apply transform;
+    auto boundingBoxTransform = Vehicle->GetVehicleBoundingBoxTransform();
+    auto front = boundingBoxTransform.TransformPositionNoScale(positions[0]);
+    auto rear = boundingBoxTransform.TransformPositionNoScale(positions[1]);
+    cr::AxlePositions result;
+    result.front = carla::geom::Vector3D(front.X, front.Y, front.Z).ToMeters();
+    result.rear = carla::geom::Vector3D(rear.X, rear.Y, rear.Z).ToMeters();
+    return result;
+  };
+
   // ~~ Actor physics ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
   BIND_SYNC(set_actor_location) << [this](
