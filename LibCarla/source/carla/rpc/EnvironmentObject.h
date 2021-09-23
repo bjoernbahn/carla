@@ -25,6 +25,8 @@ namespace rpc {
     std::string name;
     CityObjectLabel type = CityObjectLabel::None;
 
+    EnvironmentObject() {};
+
 #ifdef LIBCARLA_INCLUDED_FROM_UE4
 
     EnvironmentObject(const FEnvironmentObject &EnvironmentObject)

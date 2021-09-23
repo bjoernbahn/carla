@@ -658,12 +658,12 @@ void FCarlaServer::FPimpl::BindActions()
   BIND_SYNC(get_actor_bounding_box) << [this](cr::ActorId ActorId) -> R<cg::BoundingBox>
   {
     REQUIRE_CARLA_EPISODE();
-    auto ActorView = Episode->FindActor(ActorId);
-    if (!ActorView.IsValid())
+    FCarlaActor* ActorView = Episode->FindCarlaActor(ActorId);
+    if (ActorView->IsInValid())
     {
       RESPOND_ERROR("unable to get actor bounding box: actor not found");
     }
-    AActor* Actor = ActorView.GetActor();
+    AActor* Actor = ActorView->GetActor();
     TArray<AActor*> ActorList = { Actor };
     auto BBoxList = UBoundingBoxCalculator::GetBoundingBoxOfActors(ActorList);
     if (!BBoxList.Num()) {
@@ -688,10 +688,10 @@ void FCarlaServer::FPimpl::BindActions()
     std::vector<FTransform> transforms;
     for (TActorIterator<AActor> Iterator(world); Iterator; ++Iterator) {
       AActor* Actor = *Iterator;
-      auto ActorView = Episode->FindOrFakeActor(Actor);
+      FCarlaActor* ActorView = Episode->FindCarlaActor(Actor);
 
       //Skip Actors with an id, because they usually don't represent map parts and can be retrieved by GetActors()
-      if (0 == ActorView.GetActorId()) {
+      if (0 == ActorView->GetActorId()) {
         Actor->GetComponents<UMeshComponent>(Components);
         auto ActorName = std::string(TCHAR_TO_UTF8(*Actor->GetFName().ToString()));
 
@@ -750,51 +750,6 @@ void FCarlaServer::FPimpl::BindActions()
     }
 
     return Result;
-  };
-
-  //OSI
-  BIND_SYNC(get_traffic_light_heads) << [this](cr::ActorId ActorId)->R<std::vector<cr::TrafficLightHeads>>
-  {
-    REQUIRE_CARLA_EPISODE();
-    auto ActorView = Episode->FindActor(ActorId);
-    if (!ActorView.IsValid())
-    {
-      RESPOND_ERROR("unable to get traffic light heads: actor not found")
-    }
-    auto TrafficLight = Cast<ATrafficLightBase>(ActorView.GetActor());
-    if (!TrafficLight)
-    {
-      RESPOND_ERROR("unable to get traffic light heads: not a traffic light actor");
-    }
-	auto Heads = TrafficLight->GetTrafficLightHeads();
-    std::vector<cr::TrafficLightHeads> TrafficLightHeads;
-	for (const auto& head : Heads) {
-	  TrafficLightHeads.push_back(head.ToRpcType(TrafficLight->GetTransform()));
-	}
-    return TrafficLightHeads;
-  };
-
-  //OSI //DEBUG
-  BIND_SYNC(get_axle_positions) << [this](cr::ActorId ActorId)->R<cr::AxlePositions>
-  {
-    REQUIRE_CARLA_EPISODE();
-    auto ActorView = Episode->FindActor(ActorId);
-    if (!ActorView.IsValid()) {
-      RESPOND_ERROR("unable to get axle positions: actor not found")
-    }
-    auto Vehicle = Cast<ACarlaWheeledVehicle>(ActorView.GetActor());
-    if (!Vehicle) {
-      RESPOND_ERROR("unable to get axle positions: not a vehicle actor");
-    }
-    auto positions = Vehicle->GetVehicleAxlePositions();
-    // Bounding box might have a different origin than the mesh - apply transform;
-    auto boundingBoxTransform = Vehicle->GetVehicleBoundingBoxTransform();
-    auto front = boundingBoxTransform.TransformPositionNoScale(positions[0]);
-    auto rear = boundingBoxTransform.TransformPositionNoScale(positions[1]);
-    cr::AxlePositions result;
-    result.front = carla::geom::Vector3D(front.X, front.Y, front.Z).ToMeters();
-    result.rear = carla::geom::Vector3D(rear.X, rear.Y, rear.Z).ToMeters();
-    return result;
   };
 
   // ~~ Actor physics ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
